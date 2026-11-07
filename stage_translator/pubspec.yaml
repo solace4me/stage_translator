@@ -1,0 +1,35 @@
+name: stage_translator
+description: Chord sheets to movable-do solfège, for playing piano by ear.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'   # Flutter 3.24 or newer
+
+dependencies:
+  flutter:
+    sdk: flutter
+  camera: ^0.11.0                         # live camera capture
+  image_picker: ^1.1.2                    # gallery upload
+  google_mlkit_text_recognition: ^0.15.0  # on-device OCR, no network
+  path_provider: ^2.1.4                   # app documents folder for the library
+  pdf: ^3.11.1                            # PDF export
+  share_plus: ^10.1.0                     # native share sheet
+  wakelock_plus: ^1.2.8                   # keep the screen on while playing
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/fonts/DejaVuSansMono.ttf        # also loaded by the PDF exporter
+    - assets/fonts/DejaVuSansMono-Bold.ttf
+  fonts:
+    - family: DejaVuSansMono                 # has the flat sign at letter width
+      fonts:
+        - asset: assets/fonts/DejaVuSansMono.ttf
+        - asset: assets/fonts/DejaVuSansMono-Bold.ttf
+          weight: 700
