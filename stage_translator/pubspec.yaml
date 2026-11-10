@@ -16,6 +16,9 @@ dependencies:
   pdf: ^3.11.1                            # PDF export
   share_plus: ^10.1.0                     # native share sheet
   wakelock_plus: ^1.2.8                   # keep the screen on while playing
+  xml: ^7.0.1                             # MusicXML parsing (v2)
+  archive: ^4.6.0                         # .mxl (zipped MusicXML) files
+  file_picker: 10.3.10
 
 dev_dependencies:
   flutter_test:
