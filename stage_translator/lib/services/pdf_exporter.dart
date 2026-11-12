@@ -39,7 +39,7 @@ class PdfExporter {
             children: [
               pw.Text(sheet.title, style: pw.TextStyle(font: bold, fontSize: 16)),
               pw.Text(
-                'Doh = ${sheet.performanceKey}'
+                '${sheet.notation == LabelNotation.numbers ? '1' : 'Doh'} = ${sheet.performanceKey}'
                 '${sheet.sheetKey != sheet.performanceKey ? '  (written in ${sheet.sheetKey})' : ''}',
                 style: pw.TextStyle(font: regular, fontSize: 10, color: PdfColors.grey700),
               ),
@@ -71,7 +71,8 @@ class PdfExporter {
 
     final dir = await getTemporaryDirectory();
     final safeName = sheet.title.replaceAll(RegExp(r'[^\w\- ]'), '').trim();
-    final file = File('${dir.path}/${safeName.isEmpty ? 'sheet' : safeName} - Doh ${sheet.performanceKey}.pdf');
+    final file = File('${dir.path}/${safeName.isEmpty ? 'sheet' : safeName} - '
+        '${sheet.notation == LabelNotation.numbers ? '1' : 'Doh'} ${sheet.performanceKey}.pdf');
     await file.writeAsBytes(await doc.save());
     return file;
   }

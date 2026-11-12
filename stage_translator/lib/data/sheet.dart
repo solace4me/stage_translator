@@ -2,6 +2,8 @@
 //
 // One saved chord sheet. Stored as JSON, one file per sheet.
 
+import '../core/solfege_engine.dart';
+
 class Sheet {
   final String id;
   final String title;
@@ -24,6 +26,9 @@ class Sheet {
 
   final bool transposeLetters;
   final bool showQuality;
+
+  /// Sol-fa ("Bm [la]") or numbers ("Bm [6]").
+  final LabelNotation notation;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -37,6 +42,7 @@ class Sheet {
     required this.lettersKey,
     this.transposeLetters = true,
     this.showQuality = false,
+    this.notation = LabelNotation.solfege,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -50,6 +56,7 @@ class Sheet {
     String? lettersKey,
     bool? transposeLetters,
     bool? showQuality,
+    LabelNotation? notation,
     DateTime? updatedAt,
   }) =>
       Sheet(
@@ -62,6 +69,7 @@ class Sheet {
         lettersKey: lettersKey ?? this.lettersKey,
         transposeLetters: transposeLetters ?? this.transposeLetters,
         showQuality: showQuality ?? this.showQuality,
+        notation: notation ?? this.notation,
         createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
@@ -77,6 +85,7 @@ class Sheet {
         'lettersKey': lettersKey,
         'transposeLetters': transposeLetters,
         'showQuality': showQuality,
+        'notation': notation.name,
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
       };
@@ -91,6 +100,7 @@ class Sheet {
         lettersKey: j['lettersKey'] as String? ?? (j['performanceKey'] as String? ?? 'C'),
         transposeLetters: j['transposeLetters'] as bool? ?? true,
         showQuality: j['showQuality'] as bool? ?? false,
+        notation: j['notation'] == 'numbers' ? LabelNotation.numbers : LabelNotation.solfege,
         createdAt: DateTime.tryParse(j['createdAt'] as String? ?? '') ?? DateTime.now(),
         updatedAt: DateTime.tryParse(j['updatedAt'] as String? ?? '') ?? DateTime.now(),
       );

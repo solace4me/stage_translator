@@ -7,11 +7,16 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'sheet.dart';
 
 class LibraryRepository {
+  /// Goes up by one after every save or delete, so screens showing the
+  /// library (the home screen) can refresh straight away.
+  static final ValueNotifier<int> changes = ValueNotifier(0);
+
   Directory? _dir;
 
   Future<Directory> _libraryDir() async {
@@ -46,11 +51,13 @@ class LibraryRepository {
     final tmp = File('${file.path}.tmp');
     await tmp.writeAsString(const JsonEncoder.withIndent('  ').convert(sheet.toJson()), flush: true);
     await tmp.rename(file.path);
+    changes.value++;
   }
 
   Future<void> delete(String id) async {
     final file = await _file(id);
     if (await file.exists()) await file.delete();
+    changes.value++;
   }
 
   static String newId() => DateTime.now().microsecondsSinceEpoch.toRadixString(36);

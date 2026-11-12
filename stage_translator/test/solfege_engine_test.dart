@@ -163,4 +163,43 @@ void main() {
       expect(SolfegeEngine.detectKey('just some words'), isNull);
     });
   });
+
+  group('numbers instead of sol-fa', () {
+    const nums = TranslateOptions(notation: LabelNotation.numbers);
+
+    test('scale degrees, with sharps and flats in front', () {
+      expect(one('D', 'D', 'D', options: nums), 'D [1]');
+      expect(one('Bm', 'D', 'D', options: nums), 'Bm [6]');
+      expect(one('G', 'D', 'D', options: nums), 'G [4]');
+      expect(one('A', 'D', 'D', options: nums), 'A [5]');
+      expect(one('C', 'D', 'D', options: nums), 'C [\u266D7]');
+      expect(one('F#', 'C', 'C', options: nums), 'F# [#4]');
+      expect(one('G/B', 'D', 'D', options: nums), 'G/B [4/6]');
+    });
+
+    test('transposing and chord quality work the same', () {
+      expect(one('Bm', 'D', 'F#', options: nums), 'D#m [6]');
+      expect(one('Bm', 'D', 'D', options: const TranslateOptions(notation: LabelNotation.numbers, showQuality: true)),
+          'Bm [6 minor]');
+    });
+
+    test('switching between sol-fa and numbers keeps the sheet', () {
+      const sheet = 'D    Bm   G\nAll my words';
+      final solfa = SolfegeEngine.process(sheet, sheetKey: k('D'), performanceKey: k('D'));
+      final numbers = SolfegeEngine.process(solfa, sheetKey: k('D'), performanceKey: k('D'), options: nums);
+      expect(numbers.split('\n').first, 'D [1]  Bm [6]  G [4]');
+      expect(SolfegeEngine.process(numbers, sheetKey: k('D'), performanceKey: k('D')), solfa);
+      expect(SolfegeEngine.process(numbers, sheetKey: k('D'), performanceKey: k('D'), options: nums), numbers);
+    });
+
+    test('a verse number in the lyrics is never taken for a label', () {
+      const sheet = '[1] Amazing grace\nverse [2] here';
+      expect(SolfegeEngine.stripLabels(sheet), sheet);
+    });
+
+    test('inline chords', () {
+      expect(one('[D]Some lyric [Bm]more', 'D', 'D', options: nums), '[D [1]]Some lyric [Bm [6]]more');
+      expect(SolfegeEngine.stripLabels('[D [1]]Some lyric'), '[D]Some lyric');
+    });
+  });
 }

@@ -102,6 +102,9 @@ const List<String> kKeyChoices = [
   'C', 'C#', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B',
 ];
 
+/// What goes in the brackets: sol-fa ("Bm [la]") or numbers ("Bm [6]").
+enum LabelNotation { solfege, numbers }
+
 class TranslateOptions {
   /// Rewrite the letters into the performance key (default) or keep them as
   /// written and label them against the performance key.
@@ -110,7 +113,14 @@ class TranslateOptions {
   /// "Bm [la minor]" instead of "Bm [la]".
   final bool showQuality;
 
-  const TranslateOptions({this.transposeLetters = true, this.showQuality = false});
+  /// Sol-fa or numbers, never both.
+  final LabelNotation notation;
+
+  const TranslateOptions({
+    this.transposeLetters = true,
+    this.showQuality = false,
+    this.notation = LabelNotation.solfege,
+  });
 }
 
 class SolfegeEngine {
@@ -144,13 +154,17 @@ class SolfegeEngine {
   // Inline chords such as "[D]Some lyric".
   static final RegExp _inlineChord = RegExp(r'\[([A-G][^\]\s]*)\]');
 
-  // Our own labels: " [la]", " [fa/la]", " [ti♭]", " [fa#/la minor]".
+  // Our own sol-fa labels: " [la]", " [fa/la]", " [ti♭]", " [fa#/la minor]".
   static final RegExp _label =
       RegExp(r' ?\[([a-z]+)(?:##|#|♭♭|♭)?(?:/[a-z]+(?:##|#|♭♭|♭)?)?(?: [^\]\[]*)?\]');
 
-  // An inline chord we labelled: "[D [do]]".
+  // Our own number labels: " [6]", " [♭7]", " [4/6]", " [#4 minor]".
+  static final RegExp _numberLabel =
+      RegExp(r' ?\[(?:##|#|♭♭|♭)?[1-7](?:/(?:##|#|♭♭|♭)?[1-7])?(?: [^\]\[]*)?\]');
+
+  // An inline chord we labelled: "[D [do]]" or "[D [1]]".
   static final RegExp _inlineLabel =
-      RegExp(r'\[([A-G][^\[\]\s]*) \[([a-z]+)[^\[\]]*\]\]');
+      RegExp(r'\[([A-G][^\[\]\s]*) \[([a-z]+|(?:##|#|♭♭|♭)?[1-7])[^\[\]]*\]\]');
 
   // Tokens that don't count for or against a chord line.
   static final RegExp _neutral = RegExp(r'^(?:[-–—|/:.*]+|\(?x\d+\)?|\d+x)$', caseSensitive: false);
@@ -192,6 +206,20 @@ class SolfegeEngine {
   static int _signed(int d) => ((d + 6) % 12) - 6;
 
   // ----------------------------------------------------------- transposing
+
+  /// Scale-degree number of [note] with [key] as 1: "6", "♭7", "#4".
+  /// Sharps and flats go in front, as number charts write them.
+  static String number(NoteName note, NoteName key) {
+    final degree = (note.letter - key.letter) % 7;
+    final semi = (note.semitone - key.semitone) % 12;
+    final diff = _signed(semi - _major[degree]);
+    final n = '${degree + 1}';
+    if (diff == 0) return n;
+    if (diff > 0 && diff <= 2) return '${'#' * diff}$n';
+    if (diff < 0 && diff >= -2) return '${flat * -diff}$n';
+    const bySemitone = ['1', '♭2', '2', '♭3', '3', '4', '#4', '5', '♭6', '6', '♭7', '7'];
+    return bySemitone[semi];
+  }
 
   /// Moves [note] from [from] to [to], keeping its scale degree and alteration,
   /// so D -> F# turns Bm into D#m (not Ebm) and G into B.
@@ -286,11 +314,17 @@ class SolfegeEngine {
   /// re-translating an edited sheet does not drift.
   static String stripLabels(String text) => text.split('\n').map((line) {
         var l = line.replaceAllMapped(_inlineLabel, (m) {
-          return allSyllables.contains(m.group(2)) ? '[${m.group(1)}]' : m.group(0)!;
+          final label = m.group(2)!;
+          final ours = allSyllables.contains(label) || RegExp(r'[1-7]$').hasMatch(label);
+          return ours ? '[${m.group(1)}]' : m.group(0)!;
         });
         l = l.replaceAllMapped(_label, (m) {
           return allSyllables.contains(m.group(1)) ? ' ' * m.group(0)!.length : m.group(0)!;
         });
+        // Number labels look like ordinary text ("[1]" can mark a verse), so
+        // they are only removed when what is left is a chord line.
+        final noNumbers = l.replaceAllMapped(_numberLabel, (m) => ' ' * m.group(0)!.length);
+        if (noNumbers != l && isChordLine(noNumbers)) l = noNumbers;
         return l == line ? line : l.trimRight();
       }).join('\n');
 
@@ -357,8 +391,10 @@ class SolfegeEngine {
     String post = '',
   }) {
     final shown = o.transposeLetters ? transposeChord(c, sheetKey, perfKey) : c;
-    final root = syllable(shown.root, perfKey);
-    final bass = shown.bass == null ? '' : '/${syllable(shown.bass!, perfKey)}';
+    String name(NoteName n) =>
+        o.notation == LabelNotation.numbers ? number(n, perfKey) : syllable(n, perfKey);
+    final root = name(shown.root);
+    final bass = shown.bass == null ? '' : '/${name(shown.bass!)}';
     final quality = o.showQuality ? _describe(shown.suffix) : '';
     return '$pre$shown$post [$root$bass${quality.isEmpty ? '' : ' $quality'}]';
   }

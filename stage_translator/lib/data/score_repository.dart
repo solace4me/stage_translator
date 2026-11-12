@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 class SavedScore {
@@ -48,6 +49,9 @@ class SavedScore {
 }
 
 class ScoreRepository {
+  /// Goes up by one after every save or delete (see LibraryRepository).
+  static final ValueNotifier<int> changes = ValueNotifier(0);
+
   Directory? _dir;
 
   Future<Directory> _scoresDir() async {
@@ -87,6 +91,7 @@ class ScoreRepository {
     final tmp = File('${dir.path}/${meta.id}.json.tmp');
     await tmp.writeAsString(jsonEncode(meta.toJson()), flush: true);
     await tmp.rename('${dir.path}/${meta.id}.json');
+    changes.value++;
   }
 
   Future<void> delete(String id) async {
@@ -95,6 +100,7 @@ class ScoreRepository {
       final f = File('${dir.path}/$id.$ext');
       if (await f.exists()) await f.delete();
     }
+    changes.value++;
   }
 
   static String newId() => 's${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';

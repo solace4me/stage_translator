@@ -70,7 +70,27 @@ class _SheetScreenState extends State<SheetScreen> {
   TranslateOptions get _options => TranslateOptions(
         transposeLetters: _sheet.transposeLetters,
         showQuality: _sheet.showQuality,
+        notation: _sheet.notation,
       );
+
+  bool get _numbers => _sheet.notation == LabelNotation.numbers;
+
+  /// Switch between sol-fa and numbers, keeping hand edits.
+  void _setNotation(LabelNotation notation) {
+    if (notation == _sheet.notation) return;
+    final next = _sheet.copyWith(notation: notation);
+    final text = SolfegeEngine.process(
+      _text.text,
+      sheetKey: NoteName.parse(_sheet.lettersKey),
+      performanceKey: NoteName.parse(_sheet.performanceKey),
+      options: TranslateOptions(
+        transposeLetters: next.transposeLetters,
+        showQuality: next.showQuality,
+        notation: notation,
+      ),
+    );
+    _apply(text, next);
+  }
 
   void _apply(String text, Sheet next) {
     setState(() {
@@ -100,7 +120,7 @@ class _SheetScreenState extends State<SheetScreen> {
       _text.text,
       sheetKey: NoteName.parse(_sheet.lettersKey),
       performanceKey: NoteName.parse(_sheet.performanceKey),
-      options: TranslateOptions(transposeLetters: next.transposeLetters, showQuality: on),
+      options: TranslateOptions(transposeLetters: next.transposeLetters, showQuality: on, notation: next.notation),
     );
     _apply(text, next);
   }
@@ -115,14 +135,15 @@ class _SheetScreenState extends State<SheetScreen> {
       text = SolfegeEngine.process(_text.text,
           sheetKey: letters,
           performanceKey: perf,
-          options: TranslateOptions(showQuality: _sheet.showQuality));
+          options: TranslateOptions(showQuality: _sheet.showQuality, notation: _sheet.notation));
     } else {
       // Move letters back to the sheet key, then label them against Doh.
       final back = SolfegeEngine.process(_text.text, sheetKey: letters, performanceKey: sheetKey);
       text = SolfegeEngine.process(back,
           sheetKey: sheetKey,
           performanceKey: perf,
-          options: TranslateOptions(transposeLetters: false, showQuality: _sheet.showQuality));
+          options: TranslateOptions(
+              transposeLetters: false, showQuality: _sheet.showQuality, notation: _sheet.notation));
     }
     _apply(
       text,
@@ -235,6 +256,10 @@ class _SheetScreenState extends State<SheetScreen> {
             PopupMenuButton<String>(
               onSelected: (v) {
                 switch (v) {
+                  case 'solfege':
+                    _setNotation(LabelNotation.solfege);
+                  case 'numbers':
+                    _setNotation(LabelNotation.numbers);
                   case 'quality':
                     _toggleQuality(!_sheet.showQuality);
                   case 'transpose':
@@ -246,6 +271,12 @@ class _SheetScreenState extends State<SheetScreen> {
                 }
               },
               itemBuilder: (_) => [
+                // Either/or: exactly one of these two is ticked.
+                CheckedPopupMenuItem(
+                    value: 'solfege', checked: !_numbers, child: const Text('Sol-fa (do re mi)')),
+                CheckedPopupMenuItem(
+                    value: 'numbers', checked: _numbers, child: const Text('Numbers (1 2 3)')),
+                const PopupMenuDivider(),
                 CheckedPopupMenuItem(
                     value: 'quality', checked: _sheet.showQuality, child: const Text('Show chord quality')),
                 CheckedPopupMenuItem(
@@ -264,7 +295,11 @@ class _SheetScreenState extends State<SheetScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  KeyPicker(label: 'Doh =', value: _sheet.performanceKey, onChanged: _changePerformanceKey),
+                  KeyPicker(
+                    label: _numbers ? '1 =' : 'Doh =',
+                    value: _sheet.performanceKey,
+                    onChanged: _changePerformanceKey,
+                  ),
                   const SizedBox(width: 12),
                   Flexible(
                     child: Text(

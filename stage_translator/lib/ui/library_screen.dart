@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../core/solfege_engine.dart';
 import '../data/library_repository.dart';
 import '../data/score_repository.dart';
 import '../data/sheet.dart';
@@ -40,6 +41,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void initState() {
     super.initState();
     _reload();
+    // Refresh whenever anything is saved or deleted, from any screen. (New
+    // sheets pass through screens that replace each other, so waiting for
+    // "the screen I opened has closed" fires too early.)
+    LibraryRepository.changes.addListener(_reload);
+    ScoreRepository.changes.addListener(_reload);
+  }
+
+  @override
+  void dispose() {
+    LibraryRepository.changes.removeListener(_reload);
+    ScoreRepository.changes.removeListener(_reload);
+    super.dispose();
   }
 
   Future<void> _reload() async {
@@ -238,7 +251,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   child: ListTile(
                     leading: CircleAvatar(child: Text(s.performanceKey)),
                     title: Text(s.title),
-                    subtitle: Text('Doh = ${s.performanceKey} · written in ${s.sheetKey}'),
+                    subtitle: Text('${s.notation == LabelNotation.numbers ? '1' : 'Doh'} = ${s.performanceKey}'
+                        ' · ${s.notation == LabelNotation.numbers ? 'numbers' : 'sol-fa'}'
+                        ' · written in ${s.sheetKey}'),
                     onTap: () => _open(SheetScreen(sheet: s, repository: _sheetsRepo)),
                   ),
                 );
