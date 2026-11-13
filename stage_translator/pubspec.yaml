@@ -19,6 +19,9 @@ dependencies:
   xml: ^7.0.1                             # MusicXML parsing (v2)
   archive: ^4.6.0                         # .mxl (zipped MusicXML) files
   file_picker: 10.3.10
+  audioplayers: ^6.1.0                    # "Play do" tones
+  package_info_plus: ^8.0.0               # build number for the update check
+  url_launcher: ^6.3.0                    # "Get the latest version" link
 
 dev_dependencies:
   flutter_test:
@@ -30,9 +33,11 @@ flutter:
   assets:
     - assets/fonts/DejaVuSansMono.ttf        # also loaded by the PDF exporter
     - assets/fonts/DejaVuSansMono-Bold.ttf
+    - assets/hymns/                          # built-in hymn library (Open Hymnal)
   fonts:
     - family: DejaVuSansMono                 # has the flat sign at letter width
       fonts:
         - asset: assets/fonts/DejaVuSansMono.ttf
         - asset: assets/fonts/DejaVuSansMono-Bold.ttf
           weight: 700
+

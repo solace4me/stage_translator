@@ -46,6 +46,16 @@ class LibraryRepository {
     return sheets;
   }
 
+  Future<Sheet?> get(String id) async {
+    final file = await _file(id);
+    if (!await file.exists()) return null;
+    try {
+      return Sheet.fromJson(jsonDecode(await file.readAsString()) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> save(Sheet sheet) async {
     final file = await _file(sheet.id);
     final tmp = File('${file.path}.tmp');

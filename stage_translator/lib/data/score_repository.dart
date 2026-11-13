@@ -19,6 +19,9 @@ class SavedScore {
   final int verse;
   final DateTime updatedAt;
 
+  /// Where it came from, e.g. "openhymnal:<id>" for the built-in library.
+  final String? source;
+
   const SavedScore({
     required this.id,
     required this.title,
@@ -26,6 +29,7 @@ class SavedScore {
     this.voiceIndex = 0,
     this.verse = 1,
     required this.updatedAt,
+    this.source,
   });
 
   Map<String, dynamic> toJson() => {
@@ -36,6 +40,7 @@ class SavedScore {
         'voiceIndex': voiceIndex,
         'verse': verse,
         'updatedAt': updatedAt.toIso8601String(),
+        if (source != null) 'source': source,
       };
 
   factory SavedScore.fromJson(Map<String, dynamic> j) => SavedScore(
@@ -45,6 +50,7 @@ class SavedScore {
         voiceIndex: (j['voiceIndex'] as num?)?.toInt() ?? 0,
         verse: (j['verse'] as num?)?.toInt() ?? 1,
         updatedAt: DateTime.tryParse(j['updatedAt'] as String? ?? '') ?? DateTime.now(),
+        source: j['source'] as String?,
       );
 }
 
@@ -75,6 +81,24 @@ class ScoreRepository {
     }
     out.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return out;
+  }
+
+  Future<SavedScore?> get(String id) async {
+    final f = File('${(await _scoresDir()).path}/$id.json');
+    if (!await f.exists()) return null;
+    try {
+      return SavedScore.fromJson(jsonDecode(await f.readAsString()) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The saved copy of a built-in hymn, if you saved it before.
+  Future<SavedScore?> findBySource(String source) async {
+    for (final s in await list()) {
+      if (s.source == source) return s;
+    }
+    return null;
   }
 
   Future<Uint8List> readFile(String id) async =>

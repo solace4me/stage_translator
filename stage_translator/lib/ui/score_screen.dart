@@ -6,9 +6,11 @@
 //    is highlighted.
 //  * Staff: one clean staff with only the chosen voice, sol-fa above each
 //    note and every verse below (the current one bright).
-// Toolbar: view, voice, Doh =. Repeats are followed by default. Big verse
-// buttons in the corner. Menu: letters/words, key-change and minor-key
+// Toolbar: view, voice, Doh =, Play do. Repeats are followed by default. Big
+// verse buttons in the corner. Menu: letters/words, key-change and minor-key
 // options, text size, PDF export.
+// Pedal: forward scrolls a page, then goes to the next verse, then (in a set
+// list) to the next song. Back does the reverse.
 
 import 'dart:typed_data';
 
@@ -23,7 +25,12 @@ import '../score/score.dart';
 import '../score/solfa.dart';
 import '../score/staff_layout.dart';
 import '../services/score_pdf_exporter.dart';
+import '../services/tone_player.dart';
+import 'feedback_dialog.dart';
 import 'key_picker.dart';
+import 'pedal.dart';
+import 'play_button.dart';
+import 'set_nav.dart';
 import 'sheet_style.dart';
 import 'staff_painter.dart';
 
@@ -34,7 +41,21 @@ class ScoreScreen extends StatefulWidget {
   final SavedScore? saved; // null = just imported, not in the library yet
   final ScoreRepository repository;
 
-  const ScoreScreen({super.key, required this.bytes, required this.repository, this.saved});
+  /// Where the file came from (e.g. the built-in hymn library), kept on save.
+  final String? source;
+
+  /// Set when playing a set list: previous/next song bar, and the pedal moves
+  /// on to the next song after the last verse.
+  final SetNav? setNav;
+
+  const ScoreScreen({
+    super.key,
+    required this.bytes,
+    required this.repository,
+    this.saved,
+    this.source,
+    this.setNav,
+  });
 
   @override
   State<ScoreScreen> createState() => _ScoreScreenState();
@@ -55,11 +76,13 @@ class _ScoreScreenState extends State<ScoreScreen> {
   bool _exporting = false;
   late final String _id = widget.saved?.id ?? ScoreRepository.newId();
   late bool _inLibrary = widget.saved != null;
+  final _scroll = ScrollController();
+  List<int> _verses = const [];
 
   @override
   void initState() {
     super.initState();
-    WakelockPlus.enable();
+    if (widget.setNav == null) WakelockPlus.enable(); // a set keeps it on itself
     try {
       _written = MusicXmlParser.parseBytes(widget.bytes);
       final s = widget.saved;
@@ -77,7 +100,8 @@ class _ScoreScreenState extends State<ScoreScreen> {
 
   @override
   void dispose() {
-    WakelockPlus.disable();
+    if (widget.setNav == null) WakelockPlus.disable();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -85,7 +109,7 @@ class _ScoreScreenState extends State<ScoreScreen> {
   NoteName? get _perfDoh => _performanceKey == null ? null : NoteName.parse(_performanceKey!);
   SolfaOptions get _options => SolfaOptions(laBasedMinor: _laBasedMinor, followKeyChanges: _followKeyChanges);
 
-  Future<void> _save() async {
+  Future<void> _save({bool quiet = false}) async {
     final score = _written;
     if (score == null) return;
     await widget.repository.save(
@@ -96,12 +120,110 @@ class _ScoreScreenState extends State<ScoreScreen> {
         voiceIndex: _voice,
         verse: _verse,
         updatedAt: DateTime.now(),
+        source: widget.saved?.source ?? widget.source,
       ),
       bytes: _inLibrary ? null : widget.bytes,
     );
-    if (!mounted) return;
+    if (!mounted || quiet) return;
     setState(() => _inLibrary = true);
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved to your hymns')));
+  }
+
+  // ------------------------------------------------------------- play do
+
+  int get _dohSemitone {
+    final perf = _perfDoh;
+    if (perf != null) return perf.semitone;
+    return _written!.initialKey.doh(laBasedMinor: _laBasedMinor).semitone;
+  }
+
+  void _playDoh() => TonePlayer.play(ToneSynth.doh(_dohSemitone));
+
+  /// First sounding note of each voice, in the key you play in.
+  int? _firstMidi(Score score, VoiceTrack track) {
+    final line = SolfaBuilder.build(score, track, performanceDoh: _perfDoh, options: _options);
+    for (final n in line.notes) {
+      if (n.pitch != null) return n.pitch!.midi;
+    }
+    return null;
+  }
+
+  Future<void> _playMenu(Score score, List<VoiceTrack> voices) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (c) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.music_note),
+            title: const Text('Doh'),
+            onTap: () => Navigator.pop(c, 'doh'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.piano),
+            title: const Text('Doh chord'),
+            subtitle: const Text('d  m  s  d\''),
+            onTap: () => Navigator.pop(c, 'chord'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.groups),
+            title: const Text('Starting notes, all voices'),
+            subtitle: const Text('Give the choir their notes'),
+            onTap: () => Navigator.pop(c, 'all'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.person),
+            title: Text('First note, ${voices[_voice].label}'),
+            onTap: () => Navigator.pop(c, 'mine'),
+          ),
+        ]),
+      ),
+    );
+    switch (choice) {
+      case 'doh':
+        _playDoh();
+      case 'chord':
+        TonePlayer.play(ToneSynth.dohChord(_dohSemitone));
+      case 'all':
+        final midis = [for (final v in voices) _firstMidi(score, v)].whereType<int>().toList();
+        TonePlayer.play(ToneSynth.rolled(midis));
+      case 'mine':
+        final m = _firstMidi(score, voices[_voice]);
+        if (m != null) TonePlayer.play([(midi: m, start: 0.0)]);
+    }
+  }
+
+  // --------------------------------------------------------- pedal / set
+
+  void _toTop() => WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scroll.hasClients) _scroll.jumpTo(0);
+      });
+
+  void _onPedal(PedalAction a) {
+    if (pageScroll(_scroll, a)) return;
+    final i = _verses.indexOf(_verse);
+    if (a == PedalAction.forward) {
+      if (i >= 0 && i < _verses.length - 1) {
+        setState(() => _verse = _verses[i + 1]);
+        _toTop();
+      } else {
+        _go(widget.setNav?.onNext);
+      }
+    } else {
+      if (i > 0) {
+        setState(() => _verse = _verses[i - 1]);
+        _toTop();
+      } else {
+        _go(widget.setNav?.onPrevious);
+      }
+    }
+  }
+
+  /// In a set: remember this hymn's key/voice/verse, then move on.
+  Future<void> _go(VoidCallback? move) async {
+    if (move == null) return;
+    if (_inLibrary) await _save(quiet: true);
+    move();
   }
 
   Future<void> _export(Score score, List<VoiceTrack> voices) async {
@@ -179,11 +301,16 @@ class _ScoreScreenState extends State<ScoreScreen> {
     if (_voice >= voices.length) _voice = 0;
     final writtenDoh = score.initialKey.doh(laBasedMinor: _laBasedMinor).toString();
     final verses = <int>{for (final v in voices) ...v.verses}.toList()..sort();
+    _verses = verses;
+    final nav = widget.setNav;
 
-    return Scaffold(
+    return Pedal(
+      onPedal: _onPedal,
+      child: Scaffold(
       appBar: AppBar(
         title: Text(score.title, overflow: TextOverflow.ellipsis),
         actions: [
+          PlayDohButton(onTap: _playDoh, onLongPress: () => _playMenu(score, voices)),
           IconButton(
             tooltip: 'Save to your hymns',
             onPressed: _save,
@@ -197,7 +324,12 @@ class _ScoreScreenState extends State<ScoreScreen> {
                 : const Icon(Icons.ios_share),
           ),
           PopupMenuButton<String>(
-            onSelected: (v) => setState(() {
+            onSelected: (v) {
+              if (v == 'feedback') {
+                showFeedbackDialog(context, where: 'Hymn: ${score.title}');
+                return;
+              }
+              setState(() {
               switch (v) {
                 case 'repeats':
                   _followRepeats = !_followRepeats;
@@ -214,7 +346,8 @@ class _ScoreScreenState extends State<ScoreScreen> {
                 case 'written':
                   _performanceKey = null;
               }
-            }),
+            });
+            },
             itemBuilder: (_) => [
               if (_written!.hasRepeats)
                 CheckedPopupMenuItem(value: 'repeats', checked: _followRepeats, child: const Text('Follow repeats')),
@@ -227,6 +360,8 @@ class _ScoreScreenState extends State<ScoreScreen> {
               const PopupMenuItem(value: 'bigger', child: Text('Larger sol-fa text')),
               const PopupMenuItem(value: 'smaller', child: Text('Smaller sol-fa text')),
               const PopupMenuItem(value: 'written', child: Text('Back to the written key')),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 'feedback', child: Text('Send feedback')),
             ],
           ),
         ],
@@ -282,10 +417,12 @@ class _ScoreScreenState extends State<ScoreScreen> {
                         performanceDoh: _perfDoh, options: _options, verse: _verse, letters: _letters),
                     highlight: _voice,
                     fontSize: _textSize,
+                    controller: _scroll,
                   )
                 : _StaffView(
                     line: SolfaBuilder.build(score, voices[_voice], performanceDoh: _perfDoh, options: _options),
                     verse: _verse,
+                    controller: _scroll,
                   ),
           ),
         ],
@@ -295,6 +432,10 @@ class _ScoreScreenState extends State<ScoreScreen> {
         current: _verse,
         onSelect: (v) => setState(() => _verse = v),
       ),
+      bottomNavigationBar: nav == null
+          ? null
+          : SetNavBar(nav: nav, onPrevious: () => _go(nav.onPrevious), onNext: () => _go(nav.onNext)),
+    ),
     );
   }
 }
@@ -304,7 +445,9 @@ class _CurwenView extends StatelessWidget {
   final CurwenScore curwen;
   final int highlight;
   final double fontSize;
-  const _CurwenView({required this.curwen, required this.highlight, required this.fontSize});
+  final ScrollController controller;
+  const _CurwenView(
+      {required this.curwen, required this.highlight, required this.fontSize, required this.controller});
 
   @override
   Widget build(BuildContext context) {
@@ -313,6 +456,7 @@ class _CurwenView extends StatelessWidget {
       final chars = ((box.maxWidth - 32) / (fontSize * kMonoCharWidth)).floor().clamp(20, 400);
       final systems = curwen.systems(chars);
       return ListView(
+        controller: controller,
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
         children: [
           Text('${curwen.keyLabel}${curwen.timeLabel == null ? '' : '   ${curwen.timeLabel}'}',
@@ -356,7 +500,8 @@ class _CurwenView extends StatelessWidget {
 class _StaffView extends StatelessWidget {
   final SolfaLine line;
   final int verse;
-  const _StaffView({required this.line, required this.verse});
+  final ScrollController controller;
+  const _StaffView({required this.line, required this.verse, required this.controller});
 
   @override
   Widget build(BuildContext context) {
@@ -366,6 +511,7 @@ class _StaffView extends StatelessWidget {
     return LayoutBuilder(builder: (context, box) {
       final layout = StaffLayout.build(line, width: box.maxWidth - 16, charWidth: metrics.lyricFontSize * 0.62);
       return SingleChildScrollView(
+        controller: controller,
         padding: const EdgeInsets.only(bottom: 120), // room for the verse buttons
         child: CustomPaint(
           size: Size(box.maxWidth, layout.rows.length * metrics.rowHeight),

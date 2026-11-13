@@ -3,6 +3,8 @@
 // The live sheet: pick Doh and the sheet re-translates instantly, keeping any
 // hand edits. Editable monospace text that fits the screen width, text size
 // controls, screen kept awake, save to library, PDF export and share.
+// Play do (tap) / do chord (hold). Pedal: forward scrolls a page, and at the
+// end moves to the next song of a set list (only while not typing).
 
 import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -11,7 +13,12 @@ import '../core/solfege_engine.dart';
 import '../data/library_repository.dart';
 import '../data/sheet.dart';
 import '../services/pdf_exporter.dart';
+import '../services/tone_player.dart';
+import 'feedback_dialog.dart';
 import 'key_picker.dart';
+import 'pedal.dart';
+import 'play_button.dart';
+import 'set_nav.dart';
 import 'sheet_style.dart';
 
 class SheetScreen extends StatefulWidget {
@@ -19,11 +26,15 @@ class SheetScreen extends StatefulWidget {
   final LibraryRepository repository;
   final bool isNew;
 
+  /// Set when playing a set list (previous/next bar, pedal goes to next song).
+  final SetNav? setNav;
+
   const SheetScreen({
     super.key,
     required this.sheet,
     required this.repository,
     this.isNew = false,
+    this.setNav,
   });
 
   @override
@@ -38,11 +49,13 @@ class _SheetScreenState extends State<SheetScreen> {
   bool _fitWidth = true;
   double _fontSize = 16;
   bool _sharing = false;
+  final _scroll = ScrollController();
+  final _textFocus = FocusNode();
 
   @override
   void initState() {
     super.initState();
-    WakelockPlus.enable(); // keep the screen on while playing
+    if (widget.setNav == null) WakelockPlus.enable(); // keep the screen on (a set does it itself)
     // Rebuild on every edit: the fit-to-width size depends on the longest line.
     // (The controller also fires on cursor moves, so compare the text.)
     var last = _text.text;
@@ -55,7 +68,9 @@ class _SheetScreenState extends State<SheetScreen> {
 
   @override
   void dispose() {
-    WakelockPlus.disable();
+    if (widget.setNav == null) WakelockPlus.disable();
+    _scroll.dispose();
+    _textFocus.dispose();
     _text.dispose();
     _title.dispose();
     super.dispose();
@@ -222,11 +237,31 @@ class _SheetScreenState extends State<SheetScreen> {
     return choice != null;
   }
 
+  // ------------------------------------------------------- play do / set
+
+  int get _dohSemitone => NoteName.parse(_sheet.performanceKey).semitone;
+
+  void _onPedal(PedalAction a) {
+    if (pageScroll(_scroll, a)) return;
+    _go(a == PedalAction.forward ? widget.setNav?.onNext : widget.setNav?.onPrevious);
+  }
+
+  /// In a set: keep any change (key, edits) and move on without asking.
+  Future<void> _go(VoidCallback? move) async {
+    if (move == null) return;
+    if (_dirty) await _save();
+    move();
+  }
+
   // ------------------------------------------------------------------ UI
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
+    final nav = widget.setNav;
+    return Pedal(
+      onPedal: _onPedal,
+      enabled: () => !_textFocus.hasFocus, // typing on a keyboard still works
+      child: PopScope(
       canPop: !_dirty,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
@@ -241,6 +276,11 @@ class _SheetScreenState extends State<SheetScreen> {
             onChanged: (_) => setState(() => _dirty = true),
           ),
           actions: [
+            PlayDohButton(
+              label: _numbers ? '1' : 'do',
+              onTap: () => TonePlayer.play(ToneSynth.doh(_dohSemitone)),
+              onLongPress: () => TonePlayer.play(ToneSynth.dohChord(_dohSemitone)),
+            ),
             IconButton(
               tooltip: 'Save to library',
               onPressed: _save,
@@ -268,6 +308,8 @@ class _SheetScreenState extends State<SheetScreen> {
                     setState(() => _fitWidth = !_fitWidth);
                   case 'rescan':
                     _retranslateFromScan();
+                  case 'feedback':
+                    showFeedbackDialog(context, where: 'Chord sheet: ${_sheet.title}');
                 }
               },
               itemBuilder: (_) => [
@@ -285,6 +327,8 @@ class _SheetScreenState extends State<SheetScreen> {
                     child: const Text('Transpose letters to Doh')),
                 CheckedPopupMenuItem(value: 'fit', checked: _fitWidth, child: const Text('Fit to screen width')),
                 const PopupMenuItem(value: 'rescan', child: Text('Re-translate from scan')),
+                const PopupMenuDivider(),
+                const PopupMenuItem(value: 'feedback', child: Text('Send feedback')),
               ],
             ),
           ],
@@ -325,7 +369,11 @@ class _SheetScreenState extends State<SheetScreen> {
             Expanded(child: _editor()),
           ],
         ),
+        bottomNavigationBar: nav == null
+            ? null
+            : SetNavBar(nav: nav, onPrevious: () => _go(nav.onPrevious), onNext: () => _go(nav.onNext)),
       ),
+    ),
     );
   }
 
@@ -344,6 +392,7 @@ class _SheetScreenState extends State<SheetScreen> {
 
       final field = TextField(
         controller: _text,
+        focusNode: _textFocus,
         maxLines: null,
         keyboardType: TextInputType.multiline,
         style: kSheetTextStyle.copyWith(fontSize: size),
@@ -358,6 +407,7 @@ class _SheetScreenState extends State<SheetScreen> {
           borderRadius: BorderRadius.circular(8),
         ),
         child: SingleChildScrollView(
+          controller: _scroll,
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: SizedBox(

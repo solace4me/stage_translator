@@ -1,30 +1,44 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// The default Flutter counter test referred to a MyApp that does not exist in
+// this project. This checks the app's built-in tone maker instead.
 
-import 'package:flutter/material.dart';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:stage_translator/main.dart';
+import 'package:stage_translator/services/tone_player.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('ToneSynth', () {
+    test('writes a valid 16-bit mono WAV', () {
+      final wav = ToneSynth.wav(ToneSynth.doh(7)); // Doh = G
+      final d = ByteData.sublistView(wav);
+      expect(String.fromCharCodes(wav.sublist(0, 4)), 'RIFF');
+      expect(String.fromCharCodes(wav.sublist(8, 12)), 'WAVE');
+      expect(d.getUint16(22, Endian.little), 1); // mono
+      expect(d.getUint32(24, Endian.little), ToneSynth.sampleRate);
+      expect(d.getUint32(40, Endian.little), wav.length - 44);
+      expect(wav.length, greaterThan(44 + ToneSynth.sampleRate)); // over a second
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    test('never clips', () {
+      final wav = ToneSynth.wav(ToneSynth.rolled([43, 55, 62, 71]));
+      final d = ByteData.sublistView(wav);
+      var peak = 0;
+      for (var i = 44; i < wav.length; i += 2) {
+        final v = d.getInt16(i, Endian.little).abs();
+        if (v > peak) peak = v;
+      }
+      expect(peak, inInclusiveRange(20000, 32767));
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    test('Doh sits in the octave from middle C', () {
+      expect(ToneSynth.doh(0).single.midi, 60); // C
+      expect(ToneSynth.doh(11).single.midi, 71); // B
+      expect(ToneSynth.dohChord(2).map((n) => n.midi), [62, 66, 69, 74]); // D F# A D
+      expect(ToneSynth.frequency(69), closeTo(440, 1e-9));
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    test('starting notes roll from the lowest', () {
+      expect(ToneSynth.rolled([67, 48, 60]).map((n) => n.midi), [48, 60, 67]);
+    });
   });
 }

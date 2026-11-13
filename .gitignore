@@ -46,3 +46,5 @@
 **/*.swo
 **/*.log
 *.pdf
+*TEST_RELEASE.md
+*FEEDBACK_SETUP.md

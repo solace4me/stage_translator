@@ -8,6 +8,7 @@
 import 'package:flutter/material.dart';
 
 import 'ui/library_screen.dart';
+import 'ui/release_gate.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +35,8 @@ class StageTranslatorApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.cyan),
         useMaterial3: true,
       ),
+      // Test builds stop after their date; old builds can be told to update.
+      builder: (context, child) => ReleaseGate(child: child ?? const SizedBox()),
       home: const LibraryScreen(),
     );
   }

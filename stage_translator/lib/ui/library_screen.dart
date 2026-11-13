@@ -1,9 +1,11 @@
 // lib/ui/library_screen.dart
 //
-// Home screen with two clearly separate tabs:
+// Home screen with three tabs:
 //   * Chord sheets: letter chords over lyrics (D, Bm, G ...) -> "D [do]"
-//   * Hymns: staff notation (notes on five lines) -> tonic sol-fa
-// Each tab has its own list, one + button, and an example of what it is for.
+//   * Hymns: staff notation (notes on five lines) -> tonic sol-fa, plus the
+//     built-in hymn library
+//   * Sets: set lists for a service or gig
+// Each tab has its own list and one + button.
 
 import 'dart:io';
 
@@ -13,11 +15,17 @@ import 'package:flutter/material.dart';
 import '../core/solfege_engine.dart';
 import '../data/library_repository.dart';
 import '../data/score_repository.dart';
+import '../data/set_list.dart';
 import '../data/sheet.dart';
+import '../services/feedback_service.dart';
+import 'feedback_dialog.dart';
 import 'hymn_import_guide.dart';
+import 'hymn_library_screen.dart';
 import 'review_screen.dart';
 import 'scan_screen.dart';
 import 'score_screen.dart';
+import 'set_list_screen.dart';
+import 'set_performance_screen.dart';
 import 'sheet_screen.dart';
 import 'sheet_style.dart';
 
@@ -31,37 +39,44 @@ class LibraryScreen extends StatefulWidget {
 class _LibraryScreenState extends State<LibraryScreen> {
   final _sheetsRepo = LibraryRepository();
   final _scoresRepo = ScoreRepository();
+  final _setsRepo = SetListRepository();
   List<Sheet> _sheets = [];
   List<SavedScore> _scores = [];
+  List<SetList> _sets = [];
   String _query = '';
   bool _loading = true;
-  int _tab = 0; // 0 = chord sheets, 1 = hymns
+  int _tab = 0; // 0 = chord sheets, 1 = hymns, 2 = sets
 
   @override
   void initState() {
     super.initState();
     _reload();
+    FeedbackService.flush(); // send any feedback written while offline
     // Refresh whenever anything is saved or deleted, from any screen. (New
     // sheets pass through screens that replace each other, so waiting for
     // "the screen I opened has closed" fires too early.)
     LibraryRepository.changes.addListener(_reload);
     ScoreRepository.changes.addListener(_reload);
+    SetListRepository.changes.addListener(_reload);
   }
 
   @override
   void dispose() {
     LibraryRepository.changes.removeListener(_reload);
     ScoreRepository.changes.removeListener(_reload);
+    SetListRepository.changes.removeListener(_reload);
     super.dispose();
   }
 
   Future<void> _reload() async {
     final sheets = await _sheetsRepo.list();
     final scores = await _scoresRepo.list();
+    final sets = await _setsRepo.list();
     if (!mounted) return;
     setState(() {
       _sheets = sheets;
       _scores = scores;
+      _sets = sets;
       _loading = false;
     });
   }
@@ -135,6 +150,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
           children: [
             const _SheetTitle('New hymn', 'Music written as notes on five lines (staff notation)'),
             ListTile(
+              leading: const Icon(Icons.menu_book),
+              title: const Text('Hymn library'),
+              subtitle: const Text('300 public-domain hymns, ready to play'),
+              onTap: () {
+                Navigator.pop(c);
+                _openHymnLibrary();
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.library_music),
               title: const Text('Open a hymn file'),
               subtitle: const Text('A MuseScore file: .mxl or .musicxml'),
@@ -197,6 +221,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     await _open(ScoreScreen(bytes: bytes, repository: _scoresRepo));
   }
 
+  void _openHymnLibrary() => _open(HymnLibraryScreen(repository: _scoresRepo));
+
   Future<void> _openScore(SavedScore s) async {
     final bytes = await _scoresRepo.readFile(s.id);
     if (!mounted) return;
@@ -220,12 +246,57 @@ class _LibraryScreenState extends State<LibraryScreen> {
     ));
   }
 
+  // ------------------------------------------------------------------- sets
+
+  Future<void> _newSet() async {
+    final now = DateTime.now();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final set = SetList(
+      id: SetListRepository.newId(),
+      name: 'Set ${now.day} ${months[now.month - 1]}',
+      updatedAt: now,
+    );
+    await _setsRepo.save(set);
+    if (!mounted) return;
+    await _open(SetListScreen(setList: set, repository: _setsRepo));
+  }
+
+  /// Same songs and keys under a new name, e.g. to reuse last Sunday's set.
+  Future<void> _duplicateSet(SetList s) async {
+    final copy = SetList(
+      id: SetListRepository.newId(),
+      name: '${s.name} (copy)',
+      items: [...s.items],
+      updatedAt: DateTime.now(),
+    );
+    await _setsRepo.save(copy);
+    if (!mounted) return;
+    await _open(SetListScreen(setList: copy, repository: _setsRepo));
+  }
+
+  Future<void> _deleteSet(SetList s) async {
+    await _setsRepo.delete(s.id);
+    await _reload();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Deleted "${s.name}"'),
+      action: SnackBarAction(
+        label: 'UNDO',
+        onPressed: () async {
+          await _setsRepo.save(s);
+          _reload();
+        },
+      ),
+    ));
+  }
+
   // --------------------------------------------------------------------- UI
 
   @override
   Widget build(BuildContext context) {
     final q = _query.toLowerCase();
     final isChords = _tab == 0;
+    final isSets = _tab == 2;
 
     final Widget list;
     if (_loading) {
@@ -259,21 +330,89 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 );
               },
             );
-    } else {
-      final items = _scores.where((s) => s.title.toLowerCase().contains(q)).toList();
+    } else if (isSets) {
+      final items = _sets.where((s) => s.name.toLowerCase().contains(q)).toList();
       list = items.isEmpty && q.isEmpty
-          ? const _EmptyTab(
-              title: 'Hymns',
-              explain: 'For music written as notes on five lines. The app writes it out '
-                  'in tonic sol-fa for every voice, in any key you choose.',
-              exampleBefore: '♩ ♩ ♩ ♩ on the staff',
-              exampleAfter: 'S |d  :r  :m  :f  |\nA |s₁ :t₁ :d  :d  |',
-              action: 'Tap + to open a hymn file (.mxl from MuseScore).',
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text('Set lists\n\nPut the songs for a service or gig in order, each in its own key. '
+                    'Then play straight through with next/previous, or a Bluetooth page-turner pedal.\n\n'
+                    'Tap + to make one.',
+                    textAlign: TextAlign.center),
+              ),
             )
           : ListView.builder(
               itemCount: items.length,
               itemBuilder: (_, i) {
                 final s = items[i];
+                return _Swipe(
+                  id: s.id,
+                  onDelete: () => _deleteSet(s),
+                  child: ListTile(
+                    leading: CircleAvatar(child: Text('${s.items.length}')),
+                    title: Text(s.name),
+                    subtitle: Text(s.items.isEmpty
+                        ? 'No songs yet'
+                        : s.items.take(3).map((e) => e.title).join(' · ') + (s.items.length > 3 ? ' …' : '')),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(
+                        tooltip: 'Play the set',
+                        icon: const Icon(Icons.play_circle, size: 36),
+                        onPressed: s.items.isEmpty ? null : () => _open(SetPerformanceScreen(setList: s)),
+                      ),
+                      PopupMenuButton<String>(
+                        tooltip: 'More',
+                        onSelected: (v) {
+                          if (v == 'copy') _duplicateSet(s);
+                          if (v == 'delete') _deleteSet(s);
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(
+                            value: 'copy',
+                            child: ListTile(leading: Icon(Icons.copy), title: Text('Duplicate'), dense: true),
+                          ),
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: ListTile(leading: Icon(Icons.delete_outline), title: Text('Delete'), dense: true),
+                          ),
+                        ],
+                      ),
+                    ]),
+                    onTap: () => _open(SetListScreen(setList: s, repository: _setsRepo)),
+                  ),
+                );
+              },
+            );
+    } else {
+      final items = _scores.where((s) => s.title.toLowerCase().contains(q)).toList();
+      final libraryTile = Card(
+        margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        child: ListTile(
+          leading: const Icon(Icons.menu_book, color: Colors.cyanAccent),
+          title: const Text('Hymn library'),
+          subtitle: const Text('300 public-domain hymns · search by title or first line'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: _openHymnLibrary,
+        ),
+      );
+      list = items.isEmpty && q.isEmpty
+          ? Column(children: [
+              libraryTile,
+              const Expanded(child: _EmptyTab(
+              title: 'Hymns',
+              explain: 'For music written as notes on five lines. The app writes it out '
+                  'in tonic sol-fa for every voice, in any key you choose.',
+              exampleBefore: '♩ ♩ ♩ ♩ on the staff',
+              exampleAfter: 'S |d  :r  :m  :f  |\nA |s₁ :t₁ :d  :d  |',
+              action: 'Open one from the hymn library, or tap + to open a hymn file (.mxl from MuseScore).',
+              )),
+            ])
+          : ListView.builder(
+              itemCount: items.length + 1,
+              itemBuilder: (_, j) {
+                if (j == 0) return libraryTile;
+                final s = items[j - 1];
                 return _Swipe(
                   id: s.id,
                   onDelete: () => _deleteScore(s),
@@ -291,6 +430,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Stage Translator Pro'),
+        actions: [
+          IconButton(
+            tooltip: 'Send feedback',
+            icon: const Icon(Icons.feedback_outlined),
+            onPressed: () => showFeedbackDialog(context,
+                where: switch (_tab) { 0 => 'Home: chord sheets', 1 => 'Home: hymns', _ => 'Home: sets' }),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: Padding(
@@ -298,7 +445,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: TextField(
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
-                hintText: isChords ? 'Search chord sheets' : 'Search hymns',
+                hintText: isChords
+                    ? 'Search chord sheets'
+                    : isSets
+                        ? 'Search set lists'
+                        : 'Search my hymns',
                 border: const OutlineInputBorder(),
                 isDense: true,
               ),
@@ -310,9 +461,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
       body: list,
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'add',
-        onPressed: isChords ? _addChordSheet : _addHymn,
+        onPressed: isChords
+            ? _addChordSheet
+            : isSets
+                ? _newSet
+                : _addHymn,
         icon: const Icon(Icons.add),
-        label: Text(isChords ? 'Chord sheet' : 'Hymn'),
+        label: Text(isChords
+            ? 'Chord sheet'
+            : isSets
+                ? 'Set list'
+                : 'Hymn'),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
@@ -327,6 +486,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
             icon: Icon(Icons.library_music_outlined),
             selectedIcon: Icon(Icons.library_music),
             label: 'Hymns',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.format_list_numbered_outlined),
+            selectedIcon: Icon(Icons.format_list_numbered),
+            label: 'Sets',
           ),
         ],
       ),
