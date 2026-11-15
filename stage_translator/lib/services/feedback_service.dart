@@ -3,9 +3,11 @@
 // Sends tester feedback to the Google Form in FeedbackConfig. If the phone is
 // offline the comment is kept and sent the next time the app opens.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -120,19 +122,20 @@ class FeedbackService {
 
   /// Null when Google accepted it, else a short reason.
   static Future<String?> _post(FeedbackItem item) async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10)
-      ..userAgent = 'Mozilla/5.0 (Linux; Android) StageTranslatorPro';
+    final client = http.Client();
     try {
-      // Sent with an exact length (not "chunked"), which Google's servers expect.
-      final body = utf8.encode(Uri(queryParameters: item.formFields()).query);
-      final req = await client.postUrl(Uri.parse(FeedbackConfig.submitUrl));
-      req.followRedirects = false;
-      req.headers.contentType = ContentType('application', 'x-www-form-urlencoded', charset: 'utf-8');
-      req.contentLength = body.length;
-      req.add(body);
-      final res = await req.close().timeout(const Duration(seconds: 15));
-      await res.drain<void>();
+      // A plain form post with an exact length, without following Google's
+      // redirect to its "thank you" page.
+      final req = http.Request('POST', Uri.parse(FeedbackConfig.submitUrl))
+        ..followRedirects = false
+        ..headers['user-agent'] = 'Mozilla/5.0 (Linux; Android) StageTranslatorPro'
+        ..bodyFields = item.formFields();
+      final res = await client.send(req).timeout(const Duration(seconds: 20));
+      await res.stream.drain<void>();
+      final location = res.headers['location'] ?? '';
+      if (location.contains('accounts.google.com') || location.contains('ServiceLogin')) {
+        return 'The form needs sign-in: turn off sign-in in the form settings';
+      }
       if (res.statusCode >= 200 && res.statusCode < 400) return null;
       return switch (res.statusCode) {
         400 => 'Google rejected it (400): check the entry ids in feedback_config.dart',
@@ -140,14 +143,14 @@ class FeedbackService {
         404 => 'Form not found (404): check formId in feedback_config.dart',
         _ => 'Google answered ${res.statusCode}',
       };
-    } on SocketException catch (e) {
-      return 'No connection (${e.osError?.message ?? e.message})';
-    } on HandshakeException catch (e) {
-      return 'Secure connection failed (${e.message})';
+    } on TimeoutException {
+      return 'No answer from Google (timed out)';
+    } on http.ClientException catch (e) {
+      return 'No connection (${e.message})';
     } catch (e) {
       return '$e';
     } finally {
-      client.close(force: true);
+      client.close();
     }
   }
 

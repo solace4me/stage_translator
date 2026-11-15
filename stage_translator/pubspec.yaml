@@ -21,6 +21,7 @@ dependencies:
   file_picker: 10.3.10
   just_audio: ^0.10.5                     # "Play do" tones and the worship pad
   package_info_plus: ^8.0.0               # build number for the update check
+  http: ^1.2.0                            # update check and feedback (works on every platform)
   url_launcher: ^6.3.0                    # "Get the latest version" link
 
 dev_dependencies:

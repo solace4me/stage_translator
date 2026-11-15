@@ -26,6 +26,8 @@ import '../score/solfa.dart';
 import '../score/staff_layout.dart';
 import '../services/score_pdf_exporter.dart';
 import '../services/tone_player.dart';
+import '../data/set_list.dart';
+import 'add_to_set.dart';
 import 'feedback_dialog.dart';
 import 'key_picker.dart';
 import 'pad_button.dart';
@@ -128,6 +130,14 @@ class _ScoreScreenState extends State<ScoreScreen> {
     if (!mounted || quiet) return;
     setState(() => _inLibrary = true);
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved to your hymns')));
+  }
+
+  /// Saves the hymn to your hymns first (a set points at the saved copy,
+  /// with its key and voice), then asks which set.
+  Future<void> _addToSet(String title) async {
+    await _save(quiet: _inLibrary);
+    if (!mounted) return;
+    await addToSetList(context, SetItem(kind: SetItemKind.score, refId: _id, title: title));
   }
 
   // ------------------------------------------------------------- play do
@@ -327,6 +337,10 @@ class _ScoreScreenState extends State<ScoreScreen> {
           ),
           PopupMenuButton<String>(
             onSelected: (v) {
+              if (v == 'addset') {
+                _addToSet(score.title);
+                return;
+              }
               if (v == 'feedback') {
                 showFeedbackDialog(context, where: 'Hymn: ${score.title}');
                 return;
@@ -363,6 +377,7 @@ class _ScoreScreenState extends State<ScoreScreen> {
               const PopupMenuItem(value: 'smaller', child: Text('Smaller sol-fa text')),
               const PopupMenuItem(value: 'written', child: Text('Back to the written key')),
               const PopupMenuDivider(),
+              const PopupMenuItem(value: 'addset', child: Text('Add to set list')),
               const PopupMenuItem(value: 'feedback', child: Text('Send feedback')),
             ],
           ),

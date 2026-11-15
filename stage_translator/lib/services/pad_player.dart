@@ -4,7 +4,7 @@
 // prayer and between songs. One pad plays for the whole app, so it keeps going
 // from song to song in a set and glides (crossfades) into each new key.
 //
-// Sounds: assets/pads/warm_<full|light>_<00..11>.ogg, seamless 24 s loops made
+// Sounds: assets/pads/warm_<full|light>_<00..11>.ogg, seamless 40 s loops made
 // for this app (tool/render_pads.py). 00 = C, 01 = C#/D♭ ... 11 = B.
 // "full" has the low end, for a mixer or a big speaker; "light" sits higher so
 // it still sounds full on a phone speaker. Auto picks by what is plugged in.

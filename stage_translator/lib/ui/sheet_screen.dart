@@ -14,6 +14,8 @@ import '../data/library_repository.dart';
 import '../data/sheet.dart';
 import '../services/pdf_exporter.dart';
 import '../services/tone_player.dart';
+import '../data/set_list.dart';
+import 'add_to_set.dart';
 import 'feedback_dialog.dart';
 import 'key_picker.dart';
 import 'pad_button.dart';
@@ -209,6 +211,13 @@ class _SheetScreenState extends State<SheetScreen> {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved to library')));
   }
 
+  /// Saves the sheet first (a set points at the saved copy), then asks which set.
+  Future<void> _addToSet() async {
+    if (_dirty) await _save();
+    if (!mounted) return;
+    await addToSetList(context, SetItem(kind: SetItemKind.sheet, refId: _sheet.id, title: _sheet.title));
+  }
+
   Future<void> _share() async {
     setState(() => _sharing = true);
     try {
@@ -310,6 +319,8 @@ class _SheetScreenState extends State<SheetScreen> {
                     setState(() => _fitWidth = !_fitWidth);
                   case 'rescan':
                     _retranslateFromScan();
+                  case 'addset':
+                    _addToSet();
                   case 'feedback':
                     showFeedbackDialog(context, where: 'Chord sheet: ${_sheet.title}');
                 }
@@ -330,6 +341,7 @@ class _SheetScreenState extends State<SheetScreen> {
                 CheckedPopupMenuItem(value: 'fit', checked: _fitWidth, child: const Text('Fit to screen width')),
                 const PopupMenuItem(value: 'rescan', child: Text('Re-translate from scan')),
                 const PopupMenuDivider(),
+                const PopupMenuItem(value: 'addset', child: Text('Add to set list')),
                 const PopupMenuItem(value: 'feedback', child: Text('Send feedback')),
               ],
             ),

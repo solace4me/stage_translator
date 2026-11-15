@@ -25,6 +25,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -129,24 +130,18 @@ class ReleaseGuard {
   static Future<GuardResult> checkOnline() async {
     RemoteConfig? remote;
     DateTime? serverTime;
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
     try {
       final uri = Uri.parse(updateUrl.isNotEmpty ? updateUrl : 'https://www.google.com/generate_204');
-      final req = await client.getUrl(uri).timeout(const Duration(seconds: 6));
-      req.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
-      final res = await req.close().timeout(const Duration(seconds: 6));
-      final date = res.headers.value(HttpHeaders.dateHeader);
+      final res = await http.get(uri, headers: {'cache-control': 'no-cache'}).timeout(const Duration(seconds: 8));
+      final date = res.headers['date'];
       if (date != null) {
         try {
           serverTime = HttpDate.parse(date).toLocal();
         } catch (_) {}
       }
-      final body = await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 6));
-      if (updateUrl.isNotEmpty && res.statusCode == 200) remote = RemoteConfig.tryParse(body);
+      if (updateUrl.isNotEmpty && res.statusCode == 200) remote = RemoteConfig.tryParse(utf8.decode(res.bodyBytes));
     } catch (_) {
       // offline or blocked: decide from what we know
-    } finally {
-      client.close(force: true);
     }
     if (!isTestBuild && remote == null) return GuardResult.ok;
     final now = await _trustedNow(serverTime);
