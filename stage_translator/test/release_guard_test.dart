@@ -12,6 +12,12 @@ void main() {
     expect(next.downloadUrl, 'https://t.me/x');
   });
 
+  test('month/day/year dates work, and an unreadable date ends at once', () {
+    expect(ReleaseGuard.expiryEnd('11/14/2026'), DateTime(2026, 11, 15));
+    expect(ReleaseGuard.expiryEnd('2026-11-14'), DateTime(2026, 11, 15));
+    expect(ReleaseGuard.evaluate(now: day, expires: 'next friday', build: 1).state, GuardState.expired);
+  });
+
   test('no expiry date means it never expires', () {
     expect(ReleaseGuard.evaluate(now: DateTime(2099), expires: '', build: 1).blocked, isFalse);
   });

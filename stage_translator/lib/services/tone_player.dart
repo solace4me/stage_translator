@@ -3,14 +3,18 @@
 // "Play do": a short piano-like tone so you can find Doh (or the starting
 // notes of a hymn) before you begin. The sound is made in code, so there are
 // no sound files to ship: a few harmonics with a soft attack and a decay,
-// written as a small WAV file in the temp folder and played with audioplayers.
+// written as a small WAV file in the temp folder and played with just_audio.
+// A running pad dips for a moment so the note can be heard.
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:audioplayers/audioplayers.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
+
+import 'pad_player.dart';
 
 /// One note: MIDI number (60 = middle C) and when it starts, in seconds.
 typedef ToneNote = ({int midi, double start});
@@ -118,8 +122,10 @@ class TonePlayer {
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/tone_$name.wav');
     if (!await file.exists()) await file.writeAsBytes(ToneSynth.wav(notes), flush: true);
-    final player = _player ??= AudioPlayer();
+    final player = _player ??= AudioPlayer(handleInterruptions: false);
+    PadEngine.instance.duck();
     await player.stop();
-    await player.play(DeviceFileSource(file.path));
+    await player.setFilePath(file.path);
+    unawaited(player.play());
   }
 }

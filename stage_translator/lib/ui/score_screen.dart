@@ -28,6 +28,7 @@ import '../services/score_pdf_exporter.dart';
 import '../services/tone_player.dart';
 import 'feedback_dialog.dart';
 import 'key_picker.dart';
+import 'pad_button.dart';
 import 'pedal.dart';
 import 'play_button.dart';
 import 'set_nav.dart';
@@ -310,6 +311,7 @@ class _ScoreScreenState extends State<ScoreScreen> {
       appBar: AppBar(
         title: Text(score.title, overflow: TextOverflow.ellipsis),
         actions: [
+          PadButton(semitone: _dohSemitone),
           PlayDohButton(onTap: _playDoh, onLongPress: () => _playMenu(score, voices)),
           IconButton(
             tooltip: 'Save to your hymns',

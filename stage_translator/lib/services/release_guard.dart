@@ -99,10 +99,19 @@ class ReleaseGuard {
     return GuardResult.ok;
   }
 
-  /// Midnight after the expiry day, or null if there is no (valid) date.
+  /// Midnight after the expiry day; null if no date was given.
+  /// Accepts 2026-11-20 and also 11/20/2026 (month/day/year).
+  /// A date that can't be read counts as already ended, so a typing mistake
+  /// shows up the first time you open the build instead of never expiring.
   static DateTime? expiryEnd(String expires) {
-    final d = DateTime.tryParse(expires);
-    if (d == null) return null;
+    final text = expires.trim();
+    if (text.isEmpty) return null;
+    var d = DateTime.tryParse(text);
+    final us = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4})$').firstMatch(text);
+    if (d == null && us != null) {
+      d = DateTime(int.parse(us.group(3)!), int.parse(us.group(1)!), int.parse(us.group(2)!));
+    }
+    if (d == null) return DateTime(2000);
     return DateTime(d.year, d.month, d.day + 1);
   }
 

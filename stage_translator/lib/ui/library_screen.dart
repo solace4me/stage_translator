@@ -18,7 +18,9 @@ import '../data/score_repository.dart';
 import '../data/set_list.dart';
 import '../data/sheet.dart';
 import '../services/feedback_service.dart';
+import '../services/pad_player.dart';
 import 'feedback_dialog.dart';
+import 'pad_button.dart';
 import 'hymn_import_guide.dart';
 import 'hymn_library_screen.dart';
 import 'review_screen.dart';
@@ -431,6 +433,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
       appBar: AppBar(
         title: const Text('Stage Translator Pro'),
         actions: [
+          // While a pad is playing, a way to stop it from home.
+          ListenableBuilder(
+            listenable: PadEngine.instance,
+            builder: (context, _) => PadEngine.instance.isPlaying
+                ? IconButton(
+                    tooltip: 'Pad playing: tap to stop, hold for settings',
+                    icon: const Icon(Icons.graphic_eq, color: Colors.cyanAccent),
+                    onPressed: PadEngine.instance.stop,
+                    onLongPress: () => showPadSettings(context),
+                  )
+                : const SizedBox.shrink(),
+          ),
           IconButton(
             tooltip: 'Send feedback',
             icon: const Icon(Icons.feedback_outlined),

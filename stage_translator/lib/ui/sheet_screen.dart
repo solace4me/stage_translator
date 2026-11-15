@@ -16,6 +16,7 @@ import '../services/pdf_exporter.dart';
 import '../services/tone_player.dart';
 import 'feedback_dialog.dart';
 import 'key_picker.dart';
+import 'pad_button.dart';
 import 'pedal.dart';
 import 'play_button.dart';
 import 'set_nav.dart';
@@ -276,6 +277,7 @@ class _SheetScreenState extends State<SheetScreen> {
             onChanged: (_) => setState(() => _dirty = true),
           ),
           actions: [
+            PadButton(semitone: _dohSemitone),
             PlayDohButton(
               label: _numbers ? '1' : 'do',
               onTap: () => TonePlayer.play(ToneSynth.doh(_dohSemitone)),
