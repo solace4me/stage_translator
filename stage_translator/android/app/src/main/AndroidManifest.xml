@@ -27,6 +27,34 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- "Open with" for hymn files (.mxl / .musicxml), e.g. from a
+                 sheet-music scanner or a file manager. Android has no file type
+                 for .mxl, so general types are listed and the app checks the file. -->
+            <intent-filter android:label="Stage Translator Pro">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="content"/>
+                <data android:scheme="file"/>
+                <data android:mimeType="application/vnd.recordare.musicxml"/>
+                <data android:mimeType="application/vnd.recordare.musicxml+xml"/>
+                <data android:mimeType="application/xml"/>
+                <data android:mimeType="text/xml"/>
+                <data android:mimeType="application/zip"/>
+                <data android:mimeType="application/x-zip-compressed"/>
+                <data android:mimeType="application/octet-stream"/>
+            </intent-filter>
+            <!-- "Share" a hymn file to the app. -->
+            <intent-filter android:label="Stage Translator Pro">
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="application/vnd.recordare.musicxml"/>
+                <data android:mimeType="application/vnd.recordare.musicxml+xml"/>
+                <data android:mimeType="application/xml"/>
+                <data android:mimeType="text/xml"/>
+                <data android:mimeType="application/zip"/>
+                <data android:mimeType="application/x-zip-compressed"/>
+                <data android:mimeType="application/octet-stream"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

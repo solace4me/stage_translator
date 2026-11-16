@@ -17,7 +17,9 @@ import '../data/library_repository.dart';
 import '../data/score_repository.dart';
 import '../data/set_list.dart';
 import '../data/sheet.dart';
+import '../score/musicxml_parser.dart';
 import '../services/feedback_service.dart';
+import '../services/incoming_files.dart';
 import '../services/pad_player.dart';
 import 'feedback_dialog.dart';
 import 'pad_button.dart';
@@ -54,6 +56,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     super.initState();
     _reload();
     FeedbackService.flush(); // send any feedback written while offline
+    IncomingFiles.listen(_openIncoming); // "Open with" / "Share" from another app
     // Refresh whenever anything is saved or deleted, from any screen. (New
     // sheets pass through screens that replace each other, so waiting for
     // "the screen I opened has closed" fires too early.)
@@ -221,6 +224,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final bytes = f.bytes ?? (f.path == null ? null : await File(f.path!).readAsBytes());
     if (bytes == null || !mounted) return;
     await _open(ScoreScreen(bytes: bytes, repository: _scoresRepo));
+  }
+
+  /// A file another app sent us (e.g. a scanner's MusicXML export): open it
+  /// as a hymn straight away, on top of whatever screen is showing.
+  Future<void> _openIncoming(IncomingFile f) async {
+    if (!mounted) return;
+    try {
+      MusicXmlParser.parseBytes(f.bytes); // is it really a hymn file?
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('"${f.name}" isn\'t a hymn file this app can read. '
+            'It opens MusicXML files (.mxl or .musicxml).'),
+        duration: const Duration(seconds: 6),
+      ));
+      return;
+    }
+    setState(() => _tab = 1);
+    await _open(ScoreScreen(bytes: f.bytes, repository: _scoresRepo));
   }
 
   void _openHymnLibrary() => _open(HymnLibraryScreen(repository: _scoresRepo));
